@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeURL } from "@/lib/aeo/analyzer";
 import { createClient } from "@/lib/supabase/server";
-
-const DAILY_LIMIT = 3;
+import { DAILY_LIMIT } from "@/lib/usage";
 
 export async function POST(request: NextRequest) {
   try {

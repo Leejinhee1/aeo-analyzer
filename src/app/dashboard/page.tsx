@@ -16,6 +16,14 @@ const mockHistory = [
   { id: 2, url: "https://test.com/blog", score: 85, date: "2026-03-17" },
 ];
 
+interface UsageStatus {
+  isPro: boolean;
+  limit: number;
+  used: number;
+  remaining: number;
+  unlimited: boolean;
+}
+
 export default function DashboardPage() {
   const [url, setUrl] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -24,9 +32,10 @@ export default function DashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  // 사용량 (임시 데이터)
-  const [usage, setUsage] = useState({ used: 1, limit: 3 });
-  const isPro = false; // 나중에 DB에서 확인
+  // 사용량/플랜 (DB 기반, /api/usage에서 조회)
+  const [usage, setUsage] = useState<UsageStatus | null>(null);
+  const isPro = usage?.unlimited ?? false;
+  const outOfQuota = usage ? !usage.unlimited && usage.remaining <= 0 : false;
 
   useEffect(() => {
     if (!supabase) {
@@ -34,19 +43,28 @@ export default function DashboardPage() {
       return;
     }
 
-    const getUser = async () => {
+    const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push("/login");
         return;
       }
       setUser(user);
+
+      // 남은 횟수·플랜 조회
+      try {
+        const res = await fetch("/api/usage");
+        if (res.ok) setUsage(await res.json());
+      } catch {
+        // 조회 실패 시 사용량 표시는 비워둔다 (분석 자체는 서버가 다시 막아준다)
+      }
+
       setLoading(false);
     };
-    getUser();
+    init();
   }, [supabase, router]);
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = () => {
     if (!url.trim()) return;
 
     // URL 유효성 검사
@@ -57,21 +75,14 @@ export default function DashboardPage() {
       return;
     }
 
-    // 사용량 체크
-    if (!isPro && usage.used >= usage.limit) {
-      alert("이번 달 무료 분석 횟수를 모두 사용했습니다. Pro로 업그레이드하세요!");
+    // 사용량 체크 (서버가 최종 권위지만, UX상 먼저 막는다)
+    if (outOfQuota) {
+      alert("오늘 무료 분석 횟수(3회)를 모두 사용했습니다. 내일 다시 시도하거나 Pro로 업그레이드하세요.");
       return;
     }
 
     setIsAnalyzing(true);
-
-    // TODO: 실제 분석 API 호출
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    setIsAnalyzing(false);
-    setUsage((prev) => ({ ...prev, used: prev.used + 1 }));
-
-    // 결과 페이지로 이동 (임시로 URL 인코딩해서 전달)
+    // 실제 분석은 결과 페이지가 /api/analyze를 호출해 수행한다.
     router.push(`/result?url=${encodeURIComponent(url)}`);
   };
 
@@ -96,9 +107,13 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm text-gray-500">이번 달 사용량</p>
+              <p className="text-sm text-gray-500">오늘 남은 분석</p>
               <p className="font-semibold">
-                {isPro ? "무제한" : `${usage.used}/${usage.limit}회`}
+                {isPro
+                  ? "무제한"
+                  : usage
+                    ? `${usage.remaining}/${usage.limit}회`
+                    : "—"}
               </p>
             </div>
             {!isPro && (
@@ -125,11 +140,12 @@ export default function DashboardPage() {
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com"
                 className="h-12"
+                disabled={outOfQuota}
                 onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
               />
               <Button
                 onClick={handleAnalyze}
-                disabled={isAnalyzing || !url.trim()}
+                disabled={isAnalyzing || !url.trim() || outOfQuota}
                 className="h-12 px-6"
               >
                 {isAnalyzing ? (
@@ -145,6 +161,11 @@ export default function DashboardPage() {
                 )}
               </Button>
             </div>
+            {outOfQuota && (
+              <p className="text-sm text-red-600 mt-3">
+                오늘 무료 분석 횟수(3회)를 모두 사용했습니다. 내일 다시 시도하거나 Pro로 업그레이드하세요.
+              </p>
+            )}
           </CardContent>
         </Card>
 
