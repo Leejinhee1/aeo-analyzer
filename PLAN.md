@@ -213,6 +213,29 @@ vercel --prod
 
 ## 버그 수정 로그
 
+### 2026-06-25: AEO 분석 로직 검증 + 버그 2건 수정 (이슈 #4 테스트 인프라 포함)
+**배경**: 레포 최초로 AEO 분석 로직을 직접 실행·검증. 산식은 결정적으로 정확하나 자동 테스트가 0개였고, 실행 중 버그 2건 발견.
+
+**Bug A — CJK 콘텐츠 길이 측정 오류**
+- **파일**: `src/lib/aeo/analyzer.ts` (`analyzeContentQuality`)
+- **문제**: `bodyText.split(/\s+/)`로 단어를 세어, 띄어쓰기로 단어를 나누지 않는 한/중/일 텍스트가 체계적으로 과소 집계됨. 한글 1,200자 본문이 "콘텐츠가 너무 짧습니다"로 오판정.
+- **수정**: `countWords()` 헬퍼 추가 — CJK 문자는 글자 단위로, 그 외 언어는 공백으로 분할해 합산.
+
+**Bug B — Pro 카테고리가 총점에 미반영**
+- **파일**: `src/lib/aeo/analyzer.ts` (`analyzeURL` → `calculateTotalScore`)
+- **문제**: `eeat`/`contentQuality`를 계산만 하고 총점에 합산하지 않아 `free 총점 == pro 총점`.
+- **수정**: Pro 분석 시 두 카테고리를 `calculateTotalScore`에 전달. 정규화(점수합/최대합×100)라 카테고리 수가 달라도 100점 만점 유지.
+
+**테스트 인프라 (이슈 #4)**
+- Vitest 도입 (`npm test` / `npm run test:watch`), `vitest.config.ts` + `vite-tsconfig-paths`로 `@/` 별칭 해석.
+- `src/app/api/analyze/route.test.ts` — 라우트 핸들러를 직접 import해 통합 테스트. Supabase 클라이언트와 fetch만 스텁:
+  - 무료·제한 미달 → 분석 실행 + `usage_logs` 기록 + 200
+  - 무료·제한 초과(≥3) → 429 + 분석 미실행 + 미기록
+  - url 누락/형식 오류 → 400
+  - 비로그인 → deviceId 기준 집계
+- `src/lib/aeo/analyzer.test.ts` — 기본 채점 + Bug A/B 회귀 고정.
+- 결과: 11개 테스트 통과, `tsc --noEmit` 통과.
+
 ### 2026-03-19: Microdata 점수 미반영 버그
 **파일**: `src/lib/aeo/analyzer.ts` (127-135줄)
 **문제**: Microdata 발견 시 items에 추가하지만 score += 를 하지 않음
