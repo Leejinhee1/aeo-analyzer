@@ -72,12 +72,15 @@ export async function analyzeURL(
     contentQuality,
   });
 
-  // 전체 점수 계산
+  // 전체 점수 계산 (Pro 분석 시 eeat/contentQuality도 합산 — calculateTotalScore가
+  // 카테고리 maxScore 합으로 정규화하므로 카테고리 수가 달라도 100점 만점으로 환산된다)
   const totalScore = calculateTotalScore({
     structuredData,
     metaTags,
     headingStructure,
     faq,
+    ...(eeat && { eeat }),
+    ...(contentQuality && { contentQuality }),
   });
 
   return {
@@ -489,7 +492,7 @@ function analyzeContentQuality($: cheerio.CheerioAPI): CategoryResult {
     .replace(/\s+/g, " ")
     .trim();
 
-  const wordCount = bodyText.split(/\s+/).length;
+  const wordCount = countWords(bodyText);
 
   if (wordCount >= 1000) {
     items.push({
@@ -584,6 +587,22 @@ function analyzeContentQuality($: cheerio.CheerioAPI): CategoryResult {
   }
 
   return { score: Math.min(score, maxScore), maxScore, items };
+}
+
+// CJK(한·중·일) 텍스트는 띄어쓰기로 단어를 구분하지 않으므로, 공백 분할만으로는
+// 분량을 심하게 과소 집계한다. CJK 문자는 글자 단위로 세고, 그 외 언어는 공백으로 분할한다.
+function countWords(text: string): number {
+  const trimmed = text.replace(/\s+/g, " ").trim();
+  if (!trimmed) return 0;
+
+  const cjkRegex =
+    /[぀-ヿ㐀-䶿一-鿿豈-﫿가-힯]/g;
+  const cjkCount = (trimmed.match(cjkRegex) || []).length;
+
+  const nonCjk = trimmed.replace(cjkRegex, " ").trim();
+  const nonCjkWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
+
+  return cjkCount + nonCjkWords;
 }
 
 function generateImprovements(
