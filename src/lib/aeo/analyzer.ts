@@ -6,6 +6,7 @@ import type {
   Improvement,
   AnalysisOptions,
 } from "./types";
+import { extractPageSignals, generatePredictedQueries } from "./queries";
 
 export async function analyzeURL(
   url: string,
@@ -83,6 +84,12 @@ export async function analyzeURL(
     ...(contentQuality && { contentQuality }),
   });
 
+  // AI 노출 테스트용 예상 질문 (Free: 휴리스틱, Pro: 휴리스틱 + AI)
+  const predictedQueries = await generatePredictedQueries(extractPageSignals($), {
+    isPro: options.isPro,
+    aiGenerator: options.aiQueryGenerator,
+  });
+
   return {
     url,
     score: totalScore,
@@ -95,6 +102,7 @@ export async function analyzeURL(
       ...(options.isPro && { eeat, contentQuality }),
     },
     improvements,
+    predictedQueries,
   };
 }
 

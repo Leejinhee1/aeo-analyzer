@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeURL } from "@/lib/aeo/analyzer";
+import { createClaudeQueryGenerator } from "@/lib/aeo/claudeQueries";
+import type { AnalysisOptions } from "@/lib/aeo/types";
 import { createClient } from "@/lib/supabase/server";
 
 const DAILY_LIMIT = 3;
+
+// Pro 분석 옵션 구성: API 키가 있을 때만 Claude 기반 AI 예상 질문 생성기를 붙인다.
+function buildAnalysisOptions(isPro: boolean): AnalysisOptions {
+  return {
+    isPro,
+    aiQueryGenerator:
+      isPro && process.env.ANTHROPIC_API_KEY
+        ? createClaudeQueryGenerator()
+        : undefined,
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Supabase 미연결(로컬/dev): 제한 없이 무료 분석
     if (!supabase) {
-      const result = await analyzeURL(url, { isPro: false });
+      const result = await analyzeURL(url, buildAnalysisOptions(false));
       return NextResponse.json(result);
     }
 
@@ -47,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Pro: 일 제한 없이 분석
     if (isPro) {
-      const result = await analyzeURL(url, { isPro: true });
+      const result = await analyzeURL(url, buildAnalysisOptions(true));
       return NextResponse.json(result);
     }
 
@@ -75,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 무료 분석 실행 (서버가 판정한 isPro=false를 전달)
-    const result = await analyzeURL(url, { isPro: false });
+    const result = await analyzeURL(url, buildAnalysisOptions(false));
 
     // 사용량 기록
     await supabase.from("usage_logs").insert({
