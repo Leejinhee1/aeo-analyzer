@@ -28,11 +28,21 @@ function stubAnalyzeFetch() {
 /** 설정 가능한 가짜 Supabase 클라이언트. */
 function makeSupabase(opts: {
   user?: { id: string } | null;
+  plan?: "free" | "pro";
   usageByUser?: number;
   usageByDevice?: number;
 }) {
   const insert = vi.fn().mockResolvedValue({ error: null });
-  const from = vi.fn(() => ({ insert }));
+  // profiles 조회 체인: from("profiles").select("plan").eq("id", ...).single()
+  const single = vi
+    .fn()
+    .mockResolvedValue({ data: opts.plan ? { plan: opts.plan } : null });
+  const eq = vi.fn(() => ({ single }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn((table: string) => {
+    if (table === "profiles") return { select };
+    return { insert }; // usage_logs 등
+  });
   const rpc = vi.fn(async (fn: string) => {
     if (fn === "get_daily_usage_by_user") return { data: opts.usageByUser ?? 0 };
     if (fn === "get_daily_usage_by_device") return { data: opts.usageByDevice ?? 0 };
@@ -41,7 +51,7 @@ function makeSupabase(opts: {
   const getUser = vi
     .fn()
     .mockResolvedValue({ data: { user: opts.user ?? null } });
-  return { auth: { getUser }, rpc, from, insert };
+  return { auth: { getUser }, rpc, from, insert, select, single };
 }
 
 function makeRequest(body: unknown): NextRequest {
@@ -134,6 +144,57 @@ describe("POST /api/analyze - 무료 사용량 제한", () => {
 
     const res = await POST(
       makeRequest({ url: "https://example.com", deviceId: "device-abc" })
+    );
+
+    expect(res.status).toBe(429);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/analyze - 서버측 플랜 권위", () => {
+  it("plan='pro'면 제한을 무시하고 분석한다 (usage 초과여도 200)", async () => {
+    const fetchMock = stubAnalyzeFetch();
+    // 사용량이 제한을 넘겨도(5) Pro면 통과해야 한다.
+    const supabase = makeSupabase({
+      user: { id: "user-pro" },
+      plan: "pro",
+      usageByUser: 5,
+    });
+    mockedCreateClient.mockResolvedValue(supabase as never);
+
+    const res = await POST(makeRequest({ url: "https://example.com" }));
+
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalled();
+    // Pro는 무제한이므로 사용량 제한 RPC를 타지 않는다.
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it("클라이언트가 보낸 isPro=true는 무시된다 (free 사용자는 여전히 429)", async () => {
+    const fetchMock = stubAnalyzeFetch();
+    // 서버 plan은 free(미설정)인데 클라이언트가 isPro=true를 위조해 보냄.
+    const supabase = makeSupabase({ user: { id: "user-1" }, usageByUser: 3 });
+    mockedCreateClient.mockResolvedValue(supabase as never);
+
+    const res = await POST(
+      makeRequest({ url: "https://example.com", isPro: true })
+    );
+
+    expect(res.status).toBe(429);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("비로그인은 isPro=true를 보내도 무료로 취급된다", async () => {
+    const fetchMock = stubAnalyzeFetch();
+    const supabase = makeSupabase({ user: null, usageByDevice: 3 });
+    mockedCreateClient.mockResolvedValue(supabase as never);
+
+    const res = await POST(
+      makeRequest({
+        url: "https://example.com",
+        deviceId: "device-abc",
+        isPro: true,
+      })
     );
 
     expect(res.status).toBe(429);
