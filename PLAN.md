@@ -10,7 +10,7 @@ URL을 입력하면 AEO(Answer Engine Optimization) 최적화 상태를 분석�
 - 각 파트 완료 시 Obsidian에 진행상황 업데이트
 
 ## 기술 스택
-- **Frontend/Backend**: Next.js 15 (App Router)
+- **Frontend/Backend**: Next.js 16 (App Router) — 현재 16.1.7
 - **Database/Auth**: Supabase + Supabase MCP
 - **Styling**: Tailwind CSS + shadcn/ui
 - **AI 분석**: Claude API (개선점 제안용)
