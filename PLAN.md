@@ -211,6 +211,32 @@ vercel --prod
 
 ---
 
+## 기능 추가 로그
+
+### 2026-06-25: AI 노출 테스트용 예상 질문 생성 (Free=휴리스틱 / Pro=휴리스틱+AI)
+**배경**: "실제 AI 검색에 얼마나 노출되는지" 테스트하려면, 그 전에 "사용자가 이 페이지를 찾을 때 던질 질문"을 먼저 생성하는 선행 모듈이 필요. AI 노출 측정의 입력이 되는 슬라이스. TDD(🔴→🟢)로 작성.
+
+**모듈** (`src/lib/aeo/queries.ts`)
+- `extractPageSignals($)` — title/description/H1/소제목/FAQPage 스키마 질문 추출 (파싱과 생성 로직 분리).
+- `generateHeuristicQueries(signals, limit)` — 순수·결정적 휴리스틱:
+  - FAQ 스키마 질문은 그대로(최고 가치), 질문형 헤딩도 그대로
+  - 주제(H1→title, 사이트명 접미사 제거)에 한국어면 `~란?`/`~ 방법`, 영어면 `what is`/`how to` 변형
+  - 비질문 헤딩은 `주제 + 헤딩` 키워드 쿼리, 공백정규화·대소문자무시 중복제거·limit 적용
+- `generatePredictedQueries(signals, {isPro, aiGenerator})` — **Free/Pro 분기 오케스트레이터**:
+  - Free → 휴리스틱만
+  - Pro → 휴리스틱 + 주입된 AI 생성기 결과, AI 실패 시에도 휴리스틱 보장
+
+**Pro AI 생성기** (`src/lib/aeo/claudeQueries.ts`)
+- `createClaudeQueryGenerator(client?)` — `@anthropic-ai/sdk`, 모델 `claude-opus-4-8`. 페이지 신호로 프롬프트 구성→예상 질문 JSON 배열 파싱(방어적). client 주입 가능(테스트·재사용).
+- `AIQueryGenerator` 인터페이스로 주입해 `queries.ts`는 SDK 비의존(순수 테스트 가능). SDK 임포트는 route만 경유.
+
+**통합**
+- `AEOAnalysisResult.predictedQueries`(Free=휴리스틱 / Pro=+AI) 추가, `analyzeURL`이 산출.
+- `/api/analyze`: Pro && `ANTHROPIC_API_KEY` 있을 때만 Claude 생성기 주입(키 없으면 휴리스틱으로 폴백).
+
+**테스트**: `queries.test.ts` 10개(추출·휴리스틱 규칙·Free/Pro 분기·AI 실패 폴백), 전체 21개 통과·tsc 통과.
+**범위 주의**: 실제 AI 모델에 질문을 던져 노출률을 측정하는 단계(2~3슬라이스)와 결과 UI 노출은 후속.
+
 ## 버그 수정 로그
 
 ### 2026-06-25: AEO 분석 로직 검증 + 버그 2건 수정 (이슈 #4 테스트 인프라 포함)

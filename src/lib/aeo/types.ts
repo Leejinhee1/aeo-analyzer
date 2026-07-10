@@ -1,3 +1,5 @@
+import type { PredictedQueries, AIQueryGenerator } from "./queries";
+
 export interface AEOAnalysisResult {
   url: string;
   score: number;
@@ -13,6 +15,8 @@ export interface AEOAnalysisResult {
     contentQuality?: CategoryResult;
   };
   improvements: Improvement[];
+  /** AI 노출 테스트용 예상 사용자 질문 (Free: 휴리스틱, Pro: 휴리스틱 + AI) */
+  predictedQueries: PredictedQueries;
 }
 
 export interface CategoryResult {
@@ -40,4 +44,6 @@ export interface Improvement {
 export interface AnalysisOptions {
   isPro: boolean;
   includeAITest?: boolean;
+  /** Pro 분석 시 AI 예상 질문 생성기(주입). 비로그인/Free면 무시된다. */
+  aiQueryGenerator?: AIQueryGenerator;
 }
