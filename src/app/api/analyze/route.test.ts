@@ -32,7 +32,8 @@ function makeSupabase(opts: {
   usageByUser?: number;
   usageByDevice?: number;
 }) {
-  const insert = vi.fn().mockResolvedValue({ error: null });
+  const insert = vi.fn().mockResolvedValue({ error: null }); // usage_logs 등
+  const analysesInsert = vi.fn().mockResolvedValue({ error: null });
   // profiles 조회 체인: from("profiles").select("plan").eq("id", ...).single()
   const single = vi
     .fn()
@@ -41,7 +42,8 @@ function makeSupabase(opts: {
   const select = vi.fn(() => ({ eq }));
   const from = vi.fn((table: string) => {
     if (table === "profiles") return { select };
-    return { insert }; // usage_logs 등
+    if (table === "analyses") return { insert: analysesInsert };
+    return { insert }; // usage_logs
   });
   const rpc = vi.fn(async (fn: string) => {
     if (fn === "get_daily_usage_by_user") return { data: opts.usageByUser ?? 0 };
@@ -51,7 +53,7 @@ function makeSupabase(opts: {
   const getUser = vi
     .fn()
     .mockResolvedValue({ data: { user: opts.user ?? null } });
-  return { auth: { getUser }, rpc, from, insert, select, single };
+  return { auth: { getUser }, rpc, from, insert, analysesInsert, select, single };
 }
 
 function makeRequest(body: unknown): NextRequest {
@@ -102,6 +104,15 @@ describe("POST /api/analyze - 무료 사용량 제한", () => {
         url_analyzed: "https://example.com",
       })
     );
+    // 로그인 사용자의 free 분석도 analyses에 저장된다
+    expect(supabase.from).toHaveBeenCalledWith("analyses");
+    expect(supabase.analysesInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "user-1",
+        url: "https://example.com",
+        score: body.score,
+      })
+    );
   });
 
   it("로그인·제한 초과(usage>=3)면 429 + 분석 미실행 + 기록 안 함", async () => {
@@ -116,7 +127,7 @@ describe("POST /api/analyze - 무료 사용량 제한", () => {
     expect(supabase.insert).not.toHaveBeenCalled();
   });
 
-  it("비로그인은 deviceId 기준으로 집계된다", async () => {
+  it("비로그인은 deviceId 기준으로 집계된다 (analyses에는 저장 안 함)", async () => {
     stubAnalyzeFetch();
     const supabase = makeSupabase({ user: null, usageByDevice: 0 });
     mockedCreateClient.mockResolvedValue(supabase as never);
@@ -135,6 +146,8 @@ describe("POST /api/analyze - 무료 사용량 제한", () => {
         user_id: null,
       })
     );
+    expect(supabase.from).not.toHaveBeenCalledWith("analyses");
+    expect(supabase.analysesInsert).not.toHaveBeenCalled();
   });
 
   it("비로그인·deviceId 제한 초과면 429", async () => {
@@ -163,11 +176,21 @@ describe("POST /api/analyze - 서버측 플랜 권위", () => {
     mockedCreateClient.mockResolvedValue(supabase as never);
 
     const res = await POST(makeRequest({ url: "https://example.com" }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalled();
     // Pro는 무제한이므로 사용량 제한 RPC를 타지 않는다.
     expect(supabase.rpc).not.toHaveBeenCalled();
+    // Pro 경로도 analyses에 저장된다
+    expect(supabase.from).toHaveBeenCalledWith("analyses");
+    expect(supabase.analysesInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "user-pro",
+        url: "https://example.com",
+        score: body.score,
+      })
+    );
   });
 
   it("클라이언트가 보낸 isPro=true는 무시된다 (free 사용자는 여전히 429)", async () => {

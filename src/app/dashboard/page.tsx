@@ -9,32 +9,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, ExternalLink, Loader2, Crown } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
-
-// 임시 분석 히스토리 데이터 (나중에 DB에서 가져옴)
-const mockHistory = [
-  { id: 1, url: "https://example.com", score: 72, date: "2026-03-18" },
-  { id: 2, url: "https://test.com/blog", score: 85, date: "2026-03-17" },
-];
+import { DAILY_LIMIT, type AnalysisHistoryItem, type UsageStatus } from "@/lib/dashboard-data";
 
 export default function DashboardPage() {
   const [url, setUrl] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  // 사용량 (임시 데이터)
-  const [usage, setUsage] = useState({ used: 1, limit: 3 });
-  const isPro = false; // 나중에 DB에서 확인
+  // 사용량/플랜 (실 데이터, 마운트 시 /api/usage로 조회)
+  const [usage, setUsage] = useState<UsageStatus | null>(null);
+
+  // 분석 히스토리 (실 데이터, 마운트 시 /api/analyses로 조회)
+  const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-
     const getUser = async () => {
+      if (!supabase) {
+        setLoading(false);
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push("/login");
@@ -46,7 +45,47 @@ export default function DashboardPage() {
     getUser();
   }, [supabase, router]);
 
-  const handleAnalyze = async () => {
+  useEffect(() => {
+    if (!user) return;
+
+    // 대시보드에 진입(재진입 포함)할 때마다 최신 사용량을 조회한다.
+    // /result에서 분석을 마치고 돌아오는 경우에도 이 마운트 시점 조회로 최신 값이 반영된다.
+    const fetchUsage = async () => {
+      try {
+        const res = await fetch("/api/usage");
+        if (!res.ok) return;
+        const data: UsageStatus = await res.json();
+        setUsage(data);
+      } catch {
+        // 사용량 조회 실패는 화면 전체를 막지 않는다 (표시만 못 함)
+      }
+    };
+    fetchUsage();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch("/api/analyses");
+        if (!res.ok) return;
+        const data: AnalysisHistoryItem[] = await res.json();
+        setHistory(data);
+      } catch {
+        // 히스토리 조회 실패는 화면 전체를 막지 않는다 (표시만 못 함)
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+    fetchHistory();
+  }, [user]);
+
+  const isPro = usage?.plan === "pro";
+  const remaining = usage?.remaining ?? null;
+  const isLimitReached = !isPro && remaining !== null && remaining <= 0;
+
+  const handleAnalyze = () => {
     if (!url.trim()) return;
 
     // URL 유효성 검사
@@ -57,21 +96,19 @@ export default function DashboardPage() {
       return;
     }
 
-    // 사용량 체크
-    if (!isPro && usage.used >= usage.limit) {
-      alert("이번 달 무료 분석 횟수를 모두 사용했습니다. Pro로 업그레이드하세요!");
+    // 사용량 체크 (서버에서 조회한 최신 값 기준)
+    if (isLimitReached) {
+      setAnalyzeError(
+        `오늘 무료 분석 횟수(${DAILY_LIMIT}회)를 모두 사용했습니다. 내일 다시 시도하거나 Pro로 업그레이드하세요.`
+      );
       return;
     }
 
+    setAnalyzeError(null);
     setIsAnalyzing(true);
 
-    // TODO: 실제 분석 API 호출
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    setIsAnalyzing(false);
-    setUsage((prev) => ({ ...prev, used: prev.used + 1 }));
-
-    // 결과 페이지로 이동 (임시로 URL 인코딩해서 전달)
+    // 실제 분석 실행: /result 페이지가 쿼리파라미터로 받은 url로 POST /api/analyze를
+    // 호출해 분석하는 기존 방식을 그대로 재사용한다 (분석 로직/사용량 기록의 단일 진입점 유지).
     router.push(`/result?url=${encodeURIComponent(url)}`);
   };
 
@@ -96,9 +133,13 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm text-gray-500">이번 달 사용량</p>
+              <p className="text-sm text-gray-500">오늘 남은 분석 횟수</p>
               <p className="font-semibold">
-                {isPro ? "무제한" : `${usage.used}/${usage.limit}회`}
+                {usage === null
+                  ? "조회 중..."
+                  : isPro
+                    ? "무제한"
+                    : `${usage.remaining}/${DAILY_LIMIT}회`}
               </p>
             </div>
             {!isPro && (
@@ -115,7 +156,9 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>새 분석 시작</CardTitle>
             <CardDescription>
-              분석할 웹페이지 URL을 입력하세요
+              {isLimitReached
+                ? `오늘 무료 분석 횟수(${DAILY_LIMIT}회)를 모두 사용했습니다. 내일 다시 시도하거나 Pro로 업그레이드하세요.`
+                : "분석할 웹페이지 URL을 입력하세요"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -125,11 +168,12 @@ export default function DashboardPage() {
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com"
                 className="h-12"
+                disabled={isLimitReached}
                 onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
               />
               <Button
                 onClick={handleAnalyze}
-                disabled={isAnalyzing || !url.trim()}
+                disabled={isAnalyzing || !url.trim() || isLimitReached}
                 className="h-12 px-6"
               >
                 {isAnalyzing ? (
@@ -145,6 +189,9 @@ export default function DashboardPage() {
                 )}
               </Button>
             </div>
+            {analyzeError && (
+              <p className="text-sm text-red-600 mt-3">{analyzeError}</p>
+            )}
           </CardContent>
         </Card>
 
@@ -157,16 +204,19 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {mockHistory.length === 0 ? (
+            {historyLoading ? (
+              <p className="text-gray-500 text-center py-8">불러오는 중...</p>
+            ) : history.length === 0 ? (
               <p className="text-gray-500 text-center py-8">
                 아직 분석한 URL이 없습니다.
               </p>
             ) : (
               <div className="space-y-3">
-                {mockHistory.map((item) => (
+                {history.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                    onClick={() => router.push(`/result?id=${item.id}`)}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-4">
                       <Badge
@@ -181,7 +231,7 @@ export default function DashboardPage() {
                         </p>
                         <p className="text-sm text-gray-500 flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {item.date}
+                          {new Date(item.created_at).toLocaleDateString("ko-KR")}
                         </p>
                       </div>
                     </div>

@@ -162,9 +162,33 @@ URL을 입력하면 AEO(Answer Engine Optimization) 최적화 상태를 분석�
 - [x] Supabase profiles 테이블 생성 ✅ 2026-03-19
 - [x] usage_logs 테이블 생성 (비로그인/로그인 일 3회 제한용) ✅ 2026-06-17 → `supabase/migrations/0001_usage_logs.sql`
 - [x] API에 분석 횟수 제한 로직 추가 ✅ 2026-06-17 (`/api/analyze` + `src/lib/device.ts`)
-- [ ] Supabase에 0001 마이그레이션 실행 (대시보드 SQL Editor)
-- [ ] 대시보드에 남은 횟수 표시
-- [ ] Polar 결제 연동
+- [ ] Supabase에 0001~0003 마이그레이션 실행·검증 (아래 "원격 마이그레이션 검증 절차" 참고 — 이슈 #2, **사용자 액션 필요**)
+- [x] 대시보드에 남은 횟수 표시 (이슈 #6) ✅ 2026-07-10 — `src/lib/dashboard-data.ts` + `/api/usage`, 가짜 setTimeout·하드코딩 제거
+- [x] 분석 히스토리 영속화 (이슈 #7) ✅ 2026-07-10 — `analyses` 저장(free/pro), `/api/analyses`(+`/[id]`), 대시보드 실히스토리, `/result?id=` 저장결과 재조회(재분석 없음)
+- [ ] Polar 결제 연동 (이슈 #8, #9)
+
+### 원격 마이그레이션 검증 절차 (이슈 #2)
+
+에이전트 원격 환경에서는 검증 불가 확인됨(2026-07-10): Supabase MCP 미연결,
+자격증명(.env) 없음, 네트워크 정책이 supabase.co/vercel.app 아웃바운드 차단.
+아래는 **사람이 1~2분에 끝낼 수 있는** 절차:
+
+1. **검증**: Supabase Dashboard > SQL Editor에 `supabase/verify_remote.sql` 전체를
+   붙여넣고 Run → 모든 행이 `PASS ✅`인지 확인 (0001/0002/0003 전체 커버).
+2. **FAIL이 있으면**: `supabase/migrations/0001_usage_logs.sql` → `0002_profiles.sql`
+   → `0003_analyses.sql` 순서로 SQL Editor에서 실행 (모두 멱등이라 재실행 안전) → 1번 재실행.
+3. **엔드투엔드 확인** (로컬 터미널):
+   ```bash
+   DEVICE="verify-$(date +%s)"
+   for i in 1 2 3 4; do
+     curl -s -o /dev/null -w "try $i -> %{http_code}\n" \
+       -X POST https://aeo-analyzer-mu.vercel.app/api/analyze \
+       -H 'content-type: application/json' \
+       -d "{\"url\":\"https://example.com\",\"deviceId\":\"$DEVICE\"}"
+   done
+   # 기대: 200, 200, 200, 429  (4회째가 429면 usage_logs 기록+집계가 원격에서 동작하는 것)
+   ```
+4. 결과를 이슈 #2에 코멘트로 남기고 클로즈.
 
 ### 배포 정보
 - **URL**: https://aeo-analyzer-mu.vercel.app

@@ -61,6 +61,17 @@ export async function POST(request: NextRequest) {
     // Pro: 일 제한 없이 분석
     if (isPro) {
       const result = await analyzeURL(url, buildAnalysisOptions(true));
+
+      // 로그인 사용자면 히스토리에 저장한다. 실패해도 분석 응답은 막지 않는다.
+      if (user) {
+        await supabase.from("analyses").insert({
+          user_id: user.id,
+          url,
+          score: result.score,
+          results: result,
+        });
+      }
+
       return NextResponse.json(result);
     }
 
@@ -96,6 +107,16 @@ export async function POST(request: NextRequest) {
       device_id: deviceId ?? null,
       url_analyzed: url,
     });
+
+    // 로그인 사용자면 히스토리에 저장한다. 실패해도 분석 응답은 막지 않는다.
+    if (user) {
+      await supabase.from("analyses").insert({
+        user_id: user.id,
+        url,
+        score: result.score,
+        results: result,
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error) {
