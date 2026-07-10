@@ -42,3 +42,29 @@ export async function getUsageStatus(
 
   return { plan, used, remaining: Math.max(0, DAILY_LIMIT - used) };
 }
+
+export interface AnalysisHistoryItem {
+  id: string;
+  url: string;
+  score: number;
+  created_at: string;
+}
+
+/**
+ * 로그인 사용자의 분석 히스토리를 최신순으로 조회한다 (대시보드용).
+ * RLS가 본인 행만 반환하도록 보장하지만, 쿼리 자체도 user_id로 명시 필터링한다.
+ */
+export async function getAnalysisHistory(
+  supabase: SupabaseClient,
+  userId: string,
+  limit = 10
+): Promise<AnalysisHistoryItem[]> {
+  const { data } = await supabase
+    .from("analyses")
+    .select("id, url, score, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  return data ?? [];
+}

@@ -162,8 +162,9 @@ URL을 입력하면 AEO(Answer Engine Optimization) 최적화 상태를 분석�
 - [x] Supabase profiles 테이블 생성 ✅ 2026-03-19
 - [x] usage_logs 테이블 생성 (비로그인/로그인 일 3회 제한용) ✅ 2026-06-17 → `supabase/migrations/0001_usage_logs.sql`
 - [x] API에 분석 횟수 제한 로직 추가 ✅ 2026-06-17 (`/api/analyze` + `src/lib/device.ts`)
-- [ ] Supabase에 0001+0002 마이그레이션 실행·검증 (아래 "원격 마이그레이션 검증 절차" 참고 — 이슈 #2)
-- [ ] 대시보드에 남은 횟수 표시 (이슈 #6)
+- [ ] Supabase에 0001~0003 마이그레이션 실행·검증 (아래 "원격 마이그레이션 검증 절차" 참고 — 이슈 #2, **사용자 액션 필요**)
+- [x] 대시보드에 남은 횟수 표시 (이슈 #6) ✅ 2026-07-10 — `src/lib/dashboard-data.ts` + `/api/usage`, 가짜 setTimeout·하드코딩 제거
+- [x] 분석 히스토리 영속화 (이슈 #7) ✅ 2026-07-10 — `analyses` 저장(free/pro), `/api/analyses`(+`/[id]`), 대시보드 실히스토리, `/result?id=` 저장결과 재조회(재분석 없음)
 - [ ] Polar 결제 연동 (이슈 #8, #9)
 
 ### 원격 마이그레이션 검증 절차 (이슈 #2)

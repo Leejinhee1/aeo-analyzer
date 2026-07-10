@@ -22,12 +22,38 @@ import { getDeviceId } from "@/lib/device";
 function ResultContent() {
   const searchParams = useSearchParams();
   const url = searchParams.get("url");
+  const id = searchParams.get("id");
 
   const [result, setResult] = useState<AEOAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // id 모드: 저장된 분석 결과를 조회만 한다. 재분석(POST /api/analyze)은 호출하지 않는다
+    // (조회할 때마다 무료 사용량이 차감되는 버그를 방지하기 위함).
+    if (id) {
+      const fetchSaved = async () => {
+        try {
+          const response = await fetch(`/api/analyses/${id}`);
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "분석 결과를 찾을 수 없습니다");
+          }
+
+          const data = await response.json();
+          setResult(data);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "조회 중 오류 발생");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchSaved();
+      return;
+    }
+
     if (!url) {
       setError("URL이 제공되지 않았습니다");
       setLoading(false);
@@ -57,15 +83,15 @@ function ResultContent() {
     };
 
     analyze();
-  }, [url]);
+  }, [url, id]);
 
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-lg font-medium">분석 중...</p>
-          <p className="text-gray-500 mt-2">{url}</p>
+          <p className="text-lg font-medium">{id ? "불러오는 중..." : "분석 중..."}</p>
+          {url && <p className="text-gray-500 mt-2">{url}</p>}
         </div>
       </main>
     );

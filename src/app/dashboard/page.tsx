@@ -9,13 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, ExternalLink, Loader2, Crown } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
-import { DAILY_LIMIT, type UsageStatus } from "@/lib/dashboard-data";
-
-// 임시 분석 히스토리 데이터 (나중에 DB에서 가져옴)
-const mockHistory = [
-  { id: 1, url: "https://example.com", score: 72, date: "2026-03-18" },
-  { id: 2, url: "https://test.com/blog", score: 85, date: "2026-03-17" },
-];
+import { DAILY_LIMIT, type AnalysisHistoryItem, type UsageStatus } from "@/lib/dashboard-data";
 
 export default function DashboardPage() {
   const [url, setUrl] = useState("");
@@ -28,6 +22,10 @@ export default function DashboardPage() {
 
   // 사용량/플랜 (실 데이터, 마운트 시 /api/usage로 조회)
   const [usage, setUsage] = useState<UsageStatus | null>(null);
+
+  // 분석 히스토리 (실 데이터, 마운트 시 /api/analyses로 조회)
+  const [history, setHistory] = useState<AnalysisHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
     const getUser = async () => {
@@ -63,6 +61,24 @@ export default function DashboardPage() {
       }
     };
     fetchUsage();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch("/api/analyses");
+        if (!res.ok) return;
+        const data: AnalysisHistoryItem[] = await res.json();
+        setHistory(data);
+      } catch {
+        // 히스토리 조회 실패는 화면 전체를 막지 않는다 (표시만 못 함)
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+    fetchHistory();
   }, [user]);
 
   const isPro = usage?.plan === "pro";
@@ -188,16 +204,19 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {mockHistory.length === 0 ? (
+            {historyLoading ? (
+              <p className="text-gray-500 text-center py-8">불러오는 중...</p>
+            ) : history.length === 0 ? (
               <p className="text-gray-500 text-center py-8">
                 아직 분석한 URL이 없습니다.
               </p>
             ) : (
               <div className="space-y-3">
-                {mockHistory.map((item) => (
+                {history.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                    onClick={() => router.push(`/result?id=${item.id}`)}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-4">
                       <Badge
@@ -212,7 +231,7 @@ export default function DashboardPage() {
                         </p>
                         <p className="text-sm text-gray-500 flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {item.date}
+                          {new Date(item.created_at).toLocaleDateString("ko-KR")}
                         </p>
                       </div>
                     </div>
