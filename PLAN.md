@@ -212,6 +212,11 @@ vercel login
 Vercel 대시보드 또는 CLI에서 설정:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` — Polar 웹훅이 profiles.plan을 갱신할 때 필요 (RLS 우회, 서버 전용. Supabase Dashboard > Settings > API에서 복사)
+- `POLAR_ACCESS_TOKEN` — Polar Dashboard > Settings에서 발급
+- `POLAR_PRO_PRICE_ID` — Polar에서 Pro 상품($0.99/월) 생성 후 price ID
+- `POLAR_WEBHOOK_SECRET` — Polar Dashboard > Webhooks에서 엔드포인트(`https://<도메인>/api/webhooks/polar`) 등록 시 발급. 구독 이벤트(subscription.*) 구독 필요
+- `ANTHROPIC_API_KEY` — (선택) Pro AI 예상 질문 생성용. 없으면 휴리스틱만 제공
 
 #### 4. 배포
 ```bash
