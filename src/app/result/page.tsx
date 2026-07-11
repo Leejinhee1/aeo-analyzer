@@ -424,7 +424,7 @@ function PredictedQueriesCard({
 
             {view.showAiSection && (
               <div>
-                <Separator className="mb-6" />
+                {view.heuristic.length > 0 && <Separator className="mb-6" />}
                 <div className="flex items-center gap-2 mb-3">
                   <Badge className="bg-blue-600 text-white">
                     <Sparkles className="h-3 w-3 mr-1" />
