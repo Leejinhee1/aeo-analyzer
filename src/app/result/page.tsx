@@ -1,7 +1,7 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,15 +18,71 @@ import {
 } from "lucide-react";
 import type { AEOAnalysisResult, CheckItem } from "@/lib/aeo/types";
 import { getDeviceId } from "@/lib/device";
+import { createClient } from "@/lib/supabase/client";
+import { startCheckout } from "@/lib/checkout";
+import type { UsageStatus } from "@/lib/dashboard-data";
 
 function ResultContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const url = searchParams.get("url");
   const id = searchParams.get("id");
+  const supabase = useMemo(() => createClient(), []);
 
   const [result, setResult] = useState<AEOAnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [usage, setUsage] = useState<UsageStatus | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setIsLoggedIn(!!user);
+    };
+    checkUser();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    // 로그인 사용자의 plan을 조회해 Pro 사용자에게는 업그레이드 유도를 숨긴다.
+    const fetchUsage = async () => {
+      try {
+        const res = await fetch("/api/usage");
+        if (!res.ok) return;
+        const data: UsageStatus = await res.json();
+        setUsage(data);
+      } catch {
+        // 조회 실패는 화면을 막지 않는다 (업그레이드 카드는 기본 노출 유지)
+      }
+    };
+    fetchUsage();
+  }, [isLoggedIn]);
+
+  const isPro = usage?.plan === "pro";
+
+  const handleUpgrade = async () => {
+    if (isCheckingOut) return;
+
+    // 비로그인 사용자는 결과 페이지에서도 접근 가능하므로, 로그인 페이지로 유도한다.
+    if (!isLoggedIn) {
+      router.push("/login");
+      return;
+    }
+
+    setCheckoutError(null);
+    setIsCheckingOut(true);
+    const { error } = await startCheckout();
+    if (error) {
+      setCheckoutError(error);
+      setIsCheckingOut(false);
+    }
+  };
 
   useEffect(() => {
     // id 모드: 저장된 분석 결과를 조회만 한다. 재분석(POST /api/analyze)은 호출하지 않는다
@@ -242,7 +298,8 @@ function ResultContent() {
           </CardContent>
         </Card>
 
-        {/* Pro 기능 안내 */}
+        {/* Pro 기능 안내 (이미 Pro인 사용자에게는 업그레이드 유도를 숨긴다) */}
+        {!isPro && (
         <Card className="border-blue-200 bg-blue-50/50 mt-6">
           <CardHeader>
             <CardTitle className="text-blue-700">Pro 버전으로 더 깊은 분석을</CardTitle>
@@ -282,12 +339,31 @@ function ResultContent() {
               </div>
             </div>
             <div className="mt-4 pt-4 border-t">
-              <Button className="w-full" disabled>
-                Pro 업그레이드 (준비 중)
+              <Button
+                className="w-full"
+                onClick={handleUpgrade}
+                disabled={isCheckingOut}
+              >
+                {isCheckingOut ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    이동 중...
+                  </>
+                ) : isLoggedIn ? (
+                  "Pro 업그레이드"
+                ) : (
+                  "로그인하고 Pro 업그레이드"
+                )}
               </Button>
+              {checkoutError && (
+                <p className="text-sm text-red-600 mt-2 text-center">
+                  {checkoutError}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
     </main>
   );

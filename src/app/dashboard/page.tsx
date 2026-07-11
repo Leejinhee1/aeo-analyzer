@@ -1,22 +1,43 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useMemo, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Clock, ExternalLink, Loader2, Crown } from "lucide-react";
+import { ArrowRight, Clock, ExternalLink, Loader2, Crown, CheckCircle2 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { DAILY_LIMIT, type AnalysisHistoryItem, type UsageStatus } from "@/lib/dashboard-data";
+import { startCheckout } from "@/lib/checkout";
 
-export default function DashboardPage() {
+/** success=true 쿼리파라미터가 있으면 결제 완료 안내 배너를 보여준다. */
+function SuccessBanner() {
+  const searchParams = useSearchParams();
+  const success = searchParams.get("success") === "true";
+
+  if (!success) return null;
+
+  return (
+    <div className="mb-6 flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950 p-4 text-sm text-green-800 dark:text-green-300">
+      <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
+      <p>
+        결제가 완료되었습니다! Pro 활성화까지 잠시 걸릴 수 있습니다. 화면에 아직 무료
+        플랜으로 보여도 잠시 후 새로고침하면 반영됩니다.
+      </p>
+    </div>
+  );
+}
+
+function DashboardContent() {
   const [url, setUrl] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -112,6 +133,19 @@ export default function DashboardPage() {
     router.push(`/result?url=${encodeURIComponent(url)}`);
   };
 
+  const handleUpgrade = async () => {
+    if (isCheckingOut) return;
+
+    setCheckoutError(null);
+    setIsCheckingOut(true);
+    const { error } = await startCheckout();
+    if (error) {
+      setCheckoutError(error);
+      setIsCheckingOut(false);
+    }
+    // 성공 시 window.location.href로 이동하므로 별도 상태 정리가 필요 없다.
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center">
@@ -123,6 +157,10 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-950 py-8 px-4">
       <div className="max-w-4xl mx-auto">
+        <Suspense fallback={null}>
+          <SuccessBanner />
+        </Suspense>
+
         {/* 사용량 & 플랜 */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -143,10 +181,26 @@ export default function DashboardPage() {
               </p>
             </div>
             {!isPro && (
-              <Button variant="outline" className="gap-2">
-                <Crown className="h-4 w-4" />
-                Pro 업그레이드
-              </Button>
+              <div className="text-right">
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleUpgrade}
+                  disabled={isCheckingOut}
+                >
+                  {isCheckingOut ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Crown className="h-4 w-4" />
+                  )}
+                  Pro 업그레이드
+                </Button>
+                {checkoutError && (
+                  <p className="text-xs text-red-600 mt-1 max-w-[200px]">
+                    {checkoutError}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -247,4 +301,8 @@ export default function DashboardPage() {
       </div>
     </main>
   );
+}
+
+export default function DashboardPage() {
+  return <DashboardContent />;
 }
