@@ -15,8 +15,11 @@ import {
   Download,
   Loader2,
   ExternalLink,
+  MessageCircleQuestion,
+  Sparkles,
 } from "lucide-react";
 import type { AEOAnalysisResult, CheckItem } from "@/lib/aeo/types";
+import { buildPredictedQueryView } from "@/lib/aeo/query-display";
 import { getDeviceId } from "@/lib/device";
 import { createClient } from "@/lib/supabase/client";
 import { startCheckout } from "@/lib/checkout";
@@ -250,6 +253,9 @@ function ResultContent() {
           <CategoryCard title="FAQ" category={result.categories.faq} />
         </div>
 
+        {/* 예상 질문 */}
+        <PredictedQueriesCard predictedQueries={result.predictedQueries} />
+
         {/* 개선 포인트 */}
         <Card>
           <CardHeader>
@@ -366,6 +372,82 @@ function ResultContent() {
         )}
       </div>
     </main>
+  );
+}
+
+function PredictedQueriesCard({
+  predictedQueries,
+}: {
+  predictedQueries: AEOAnalysisResult["predictedQueries"] | undefined;
+}) {
+  // 과거 저장된 분석(jsonb)에는 predictedQueries가 없을 수 있으므로 방어적으로 처리한다.
+  const view = buildPredictedQueryView(predictedQueries);
+
+  return (
+    <Card className="mb-8">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <MessageCircleQuestion className="h-5 w-5 text-blue-600" />
+          예상 질문
+        </CardTitle>
+        <CardDescription>
+          사용자가 이 페이지를 찾을 때 AI 검색엔진에 던질 법한 질문입니다. AI 노출
+          테스트의 입력으로 사용됩니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {view.isEmpty ? (
+          <p className="text-gray-500 text-center py-4">
+            예상 질문을 생성하지 못했습니다. 제목·헤딩·FAQ 콘텐츠를 보강하면 질문이
+            생성됩니다.
+          </p>
+        ) : (
+          <div className="space-y-6">
+            {view.heuristic.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Badge variant="secondary">기본</Badge>
+                  <span className="text-xs text-gray-500">
+                    페이지 구조 기반 예상 질문
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {view.heuristic.map((query, index) => (
+                    <li key={index} className="flex items-start gap-2 text-sm">
+                      <span className="text-blue-600 mt-0.5 shrink-0">•</span>
+                      <span className="text-gray-700">{query}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {view.showAiSection && (
+              <div>
+                <Separator className="mb-6" />
+                <div className="flex items-center gap-2 mb-3">
+                  <Badge className="bg-blue-600 text-white">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    Pro
+                  </Badge>
+                  <span className="text-xs text-gray-500">
+                    Claude AI 기반 예상 질문
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {view.ai.map((query, index) => (
+                    <li key={index} className="flex items-start gap-2 text-sm">
+                      <Sparkles className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                      <span className="text-gray-700">{query}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
